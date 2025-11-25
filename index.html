@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>記憶実験 (Day 1)</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #3498db; --bg: #ecf0f1; }
+        body { font-family: "Helvetica Neue", Arial, sans-serif; background: var(--bg); color: #333; line-height: 1.8; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 40px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1, h2, h3 { text-align: center; color: var(--primary); }
+        .hidden { display: none !important; }
+        .btn { display: block; width: 100%; max-width: 300px; margin: 20px auto; padding: 15px; background: var(--accent); color: #fff; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; }
+        .btn:hover { background: #2980b9; }
+        input, textarea { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        textarea { height: 120px; }
+        #timer-box { text-align: center; font-size: 3em; font-weight: bold; color: #e74c3c; margin: 20px 0; }
+        .task-content { padding: 30px; background: #f8f9fa; border-left: 5px solid var(--accent); margin-bottom: 20px; white-space: pre-wrap; font-size: 1.1em; text-align: justify;}
+        .digit-display { font-size: 4em; text-align: center; height: 150px; line-height: 150px; font-weight: bold; }
+        .nasa-item, .quiz-item { margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
+        label { display: block; margin: 8px 0; cursor: pointer; }
+        #loading { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(255,255,255,0.9); z-index: 999; display: flex; justify-content: center; align-items: center; font-size: 1.5em; flex-direction: column; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Modal */
+        #custom-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 30px; border-radius: 8px; max-width: 400px; width: 90%; text-align: center; }
+        .modal-msg { font-size: 1.2em; margin-bottom: 20px; font-weight: bold; }
+        .modal-btn { background: var(--accent); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<!-- モーダル -->
+<div id="custom-modal" class="hidden">
+    <div class="modal-content">
+        <div id="modal-msg" class="modal-msg"></div>
+        <button id="modal-ok-btn" class="modal-btn">OK</button>
+    </div>
+</div>
+
+<div id="loading" class="hidden">
+    <div class="spinner"></div>
+    <p>データ保存中...</p>
+</div>
+
+<div class="container">
+    <!-- 1. 開始画面 -->
+    <section id="screen-welcome">
+        <h1>心理学記憶実験 (Day 1)</h1>
+        <p>本日は「Day 1」の実験です。</p>
+        <p>所定の時間経過後に、事後テストの案内をメールでお送りします。</p>
+        
+        <div style="text-align:left; max-width:400px; margin:0 auto;">
+            <label>参加者ID:</label>
+            <input type="text" id="participant-id" placeholder="例: P01">
+            <label>メールアドレス (通知用):</label>
+            <input type="text" id="participant-email" placeholder="example@mail.com">
+        </div>
+
+        <button class="btn" onclick="App.startExperiment()">実験開始</button>
+    </section>
+
+    <!-- 2. WMC課題 -->
+    <section id="screen-wmc-intro" class="hidden">
+        <h2>Part 1: 数字スパン課題</h2>
+        <p>画面上の数字が音声とともに<strong>1秒間隔</strong>で1つずつ提示されます。</p>
+        <p>提示終了後、数字を順番通りに入力してください。</p>
+        <button class="btn" onclick="WMC.startPhase('forward')">順唱課題を始める</button>
+    </section>
+
+    <section id="screen-wmc-task" class="hidden">
+        <h2 id="wmc-title">数字記憶</h2>
+        <div id="wmc-digit-area" class="digit-display">Wait...</div>
+        <div id="wmc-input-area" class="hidden">
+            <input type="text" id="wmc-answer" autocomplete="off" placeholder="例: 582" style="font-size:1.5em; text-align:center;">
+            <button class="btn" onclick="WMC.submitAnswer()">回答する</button>
+        </div>
+    </section>
+
+    <section id="screen-wmc-backward-intro" class="hidden">
+        <h2>数字スパン課題（逆唱）</h2>
+        <p>次は提示された数字を、<strong>逆の順番で</strong>入力してください。</p>
+        <button class="btn" onclick="WMC.startPhase('backward')">逆唱課題を始める</button>
+    </section>
+
+    <!-- 3. 本実験 -->
+    <section id="screen-main-intro" class="hidden">
+        <h2>Part 2: 文章記憶実験</h2>
+        <p>以下の流れを<strong>4セット</strong>繰り返します。</p>
+        <ol>
+            <li>指示された方法で文章を記憶 (120秒)</li>
+            <li>テスト (単語再生 & クイズ)</li>
+            <li>アンケート</li>
+            <li>休憩 (3分)</li>
+        </ol>
+        <button class="btn" onclick="MainExp.startNextTrial()">最初のセットへ進む</button>
+    </section>
+
+    <section id="screen-memory" class="hidden">
+        <h2 id="condition-label"></h2>
+        <div id="timer-box">120</div>
+        <p id="instruction-text" style="text-align:center; font-weight:bold; font-size:1.2em; color:#d35400;"></p>
+        <div id="text-display-area" class="task-content"></div>
+        <div id="memo-container" class="hidden">
+            <p style="color:#c0392b; font-weight:bold;">【メモ欄】</p>
+            <textarea id="memo-input"></textarea>
+        </div>
+    </section>
+
+    <section id="screen-test" class="hidden">
+        <h2>再生テスト & クイズ</h2>
+        <h3>1. 単語再生</h3>
+        <textarea id="recall-input" placeholder="箇条書きで入力..."></textarea>
+        <h3>2. 内容理解クイズ</h3>
+        <div id="quiz-container"></div>
+        <button class="btn" onclick="MainExp.finishTest()">次へ</button>
+    </section>
+
+    <section id="screen-nasatlx" class="hidden">
+        <h2>事後アンケート</h2>
+        <form id="nasa-form"></form>
+        <button class="btn" onclick="MainExp.submitData()">送信して休憩へ</button>
+    </section>
+
+    <section id="screen-break" class="hidden">
+        <h2>休憩タイム</h2>
+        <div id="break-timer" style="font-size:4em; text-align:center; color:#27ae60;">03:00</div>
+        <button id="skip-break-btn" class="btn" style="background:#95a5a6;" onclick="MainExp.endBreak()">スキップ</button>
+    </section>
+
+    <!-- 修正箇所: 終了画面での周知追加 -->
+    <section id="screen-finish" class="hidden">
+        <h1>実験終了 (Day 1)</h1>
+        <p>本日の課題は終了です。</p>
+        <p>所定の時間後にメールで届くDay2テストにもご協力ください。</p>
+        
+        <div style="background:#fef9e7; padding:15px; border-radius:5px; margin-top:20px; text-align:left; font-size:0.9em; border: 1px solid #f1c40f;">
+            <strong>【ご注意：メールのURLが開けない場合】</strong><br>
+            メールのURLを開いた際にエラー（ファイルが開けない等）が表示される場合は、
+            URLをコピーしてブラウザの<strong>「シークレットモード（プライベートブラウズ）」</strong>で開いてください。
+            <br><small>※Googleアカウントのログイン重複によるエラーを防ぐためです。</small>
+        </div>
+    </section>
+</div>
+
+<script>
+// 実験データ
+const EXPERIMENT_DATA = [
+    {
+        text: "佐藤健一さんは、金曜日の夜、仕事を終えた後に駅前のスーパーマーケットへ立ち寄りました。週末の夕食用に、カレーのルー、北海道産の玉ねぎ、そして特売になっていた豚肉を購入しました。レジで三千円を支払い店を出ようとしましたが、ポケットに入っていたはずの家の鍵が見当たりません。慌ててサービスカウンターに戻って尋ねると、親切な店員が黒い革製のキーケースを保管してくれていました。彼は深々と頭を下げてお礼を言い、午後八時発の最終バスに乗って帰宅しました。家に着くと、妻の由美さんが玄関で出迎えてくれ、彼はスーパーでの出来事を安堵した表情で語りました。",
+        quiz: [{q:"いつスーパーに寄りましたか？",opts:["金曜朝","金曜夜","土曜夜"],a:1},{q:"何の肉を買いましたか？",opts:["牛","鶏","豚"],a:2},{q:"何を失くしましたか？",opts:["財布","鍵","携帯"],a:1},{q:"バスは何時発でしたか？",opts:["7時","8時","9時"],a:1},{q:"出迎えたのは誰？",opts:["母","娘","妻"],a:2}]
+    },
+    {
+        text: "北の地方にある「青井の森」は、珍しい植物が多く生息することで知られています。特に有名なのは、初夏にだけ咲く「銀の鈴」という花です。この花は、月明かりを受けると薄白く光る性質があり、地元の観光客に人気があります。森の中央には大きな湖があり、そこには古くから主（ぬし）と呼ばれる巨大な魚が住んでいるという伝説があります。近年、環境保護のために立ち入りが制限される区域ができましたが、ハイキングコースは整備されており、週末には多くの家族連れが訪れます。管理事務所では、森のガイドマップを二百円で販売しており、収益は森の保全に使われています。",
+        quiz: [{q:"花が咲く季節は？",opts:["春","初夏","秋"],a:1},{q:"花の特徴は？",opts:["香り","変色","光る"],a:2},{q:"中央にあるものは？",opts:["神社","湖","山"],a:1},{q:"伝説の生き物は？",opts:["龍","魚","亀"],a:1},{q:"マップの値段は？",opts:["100円","200円","300円"],a:1}]
+    },
+    {
+        text: "「春山塗り」という伝統工芸品は、この地域の特産物として三百年以上の歴史を持っています。特徴的なのは、漆（うるし）に混ぜられた細かい貝殻の粉末が、光の当たり方によって七色に輝く点です。制作には非常に時間がかかり、一つの小さなお椀を作るのに最低でも三ヶ月が必要です。職人たちは、漆が最も乾きやすいとされる湿度の高い梅雨の時期に、集中して塗り作業を行います。かつては殿様への献上品として作られていましたが、現在では日常的に使える箸やアクセサリーなども作られており、若い世代の職人も少しずつ増えています。毎年秋には大きな展示会が開かれます。",
+        quiz: [{q:"歴史は何年？",opts:["100","200","300"],a:2},{q:"混ぜられているのは？",opts:["金粉","銀粉","貝殻"],a:2},{q:"制作期間は？",opts:["1ヶ月","2ヶ月","3ヶ月"],a:2},{q:"作業時期は？",opts:["春","梅雨","冬"],a:1},{q:"誰への献上品？",opts:["天皇","将軍","殿様"],a:2}]
+    },
+    {
+        text: "先月、国際天文学チームが地球から約五十光年離れた場所に新しい惑星を発見したと発表しました。この惑星は「ノヴァ・テラ」と名付けられ、地球の約二倍の大きさがあります。表面の大部分が深い海で覆われており、平均気温は二十度前後と推定されています。大気中には酸素が含まれている可能性が高く、生命が存在する条件を満たしているとして世界中から注目されています。今回の発見に使われたのは、南米の山頂に設置された最新鋭の巨大望遠鏡でした。研究チームは、今後十年かけて無人探査機を送り込み、より詳しい地質や大気の調査を行う計画を立てています。",
+        quiz: [{q:"距離は？",opts:["10","50","100"],a:1},{q:"大きさは地球の？",opts:["2倍","5倍","10倍"],a:0},{q:"表面にあるのは？",opts:["氷","砂漠","海"],a:2},{q:"望遠鏡の場所は？",opts:["ハワイ","南米","宇宙"],a:1},{q:"調査に使うのは？",opts:["飛行士","探査機","衛星"],a:1}]
+    }
+];
+
+const CONDITIONS = [
+    { id: "silent", label: "黙読", desc: "声に出さず目で読んで記憶してください。" },
+    { id: "aloud", label: "音読", desc: "声に出して読んで記憶してください。" },
+    { id: "listen", label: "聞く", desc: "流れる音声を聞いて記憶してください（音声は2回流れます）。" },
+    { id: "write", label: "書く", desc: "最初の60秒は黙読し、後半60秒はメモ欄に書きながら記憶してください。" }
+];
+
+const NASA_QUESTIONS = [
+    { id: "mental", label: "精神的負担", q: "頭を使う量が多いと感じましたか？" },
+    { id: "physical", label: "身体的負担", q: "体を使うのが大変だと感じましたか？" },
+    { id: "temporal", label: "時間的圧迫", q: "時間に追われたり、焦りを感じましたか？" },
+    { id: "performance", label: "成績満足度", q: "うまくできたと思いますか？" },
+    { id: "effort", label: "努力度", q: "努力が必要だと感じましたか？" },
+    { id: "frustration", label: "ストレス", q: "いらいらしたり、緊張しましたか？" },
+    { id: "attention", label: "集中維持", q: "集中を保てたと感じましたか？" }
+];
+
+// 状態管理
+const State = {
+    pid: "",
+    email: "",
+    wmc: { forwardScore: 0, backwardScore: 0 },
+    trials: [], 
+    currentTrialIndex: 0,
+    currentMaterial: null,
+    currentCondition: null
+};
+
+// ヘルパー関数
+const $ = id => document.getElementById(id);
+const show = id => $(id).classList.remove('hidden');
+const hide = id => $(id).classList.add('hidden');
+const hideAll = () => document.querySelectorAll('section').forEach(el => el.classList.add('hidden'));
+const shuffle = arr => {
+    const newArr = [...arr];
+    for (let i = newArr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+    }
+    return newArr;
+};
+
+// モーダル
+const showModal = (msg, callback) => {
+    const modal = $('custom-modal');
+    $('modal-msg').innerText = msg;
+    $('modal-msg').style.color = msg.includes("不正解") ? "#e74c3c" : "#27ae60";
+    modal.classList.remove('hidden');
+    $('modal-ok-btn').onclick = () => {
+        modal.classList.add('hidden');
+        if (callback) callback();
+    };
+};
+
+// 読み上げ
+const speak = (text, rate = 1.0, onEnd = null) => {
+    window.speechSynthesis.cancel();
+    const uttr = new SpeechSynthesisUtterance(text);
+    uttr.lang = "ja-JP";
+    uttr.rate = rate;
+    if(onEnd) uttr.onend = onEnd;
+    window.speechSynthesis.speak(uttr);
+};
+
+// App
+const App = {
+    startExperiment: () => {
+        const pid = $('participant-id').value;
+        if (!pid) return alert("IDを入力してください");
+        State.pid = pid;
+        State.email = $('participant-email').value; // メール保持
+        
+        const shuffledConditions = shuffle([...CONDITIONS]);
+        const shuffledMaterials = shuffle([0, 1, 2, 3]);
+        
+        State.trials = shuffledConditions.map((cond, i) => ({
+            condition: cond,
+            materialIdx: shuffledMaterials[i] // 文章番号を保存
+        }));
+
+        hideAll();
+        show('screen-wmc-intro');
+    }
+};
+
+// WMC
+const WMC = {
+    phase: '', level: 2, errors: 0, consecutiveErrors: 0, currentDigits: [], maxScore: 0,
+    startPhase: (phase) => {
+        WMC.phase = phase; WMC.level = 2; WMC.consecutiveErrors = 0; WMC.maxScore = 0;
+        hideAll(); show('screen-wmc-task'); WMC.nextTrial();
+    },
+    nextTrial: () => {
+        if (WMC.consecutiveErrors >= 2) {
+            if (WMC.phase === 'forward') {
+                State.wmc.forwardScore = WMC.maxScore;
+                hideAll(); show('screen-wmc-backward-intro');
+            } else {
+                State.wmc.backwardScore = WMC.maxScore;
+                WMC.saveData();
+                hideAll(); show('screen-main-intro');
+            }
+            return;
+        }
+        $('wmc-title').innerText = `数字記憶 (${WMC.phase==='forward'?'順唱':'逆唱'}): ${WMC.level}桁`;
+        $('wmc-digit-area').innerText = "Ready...";
+        show('wmc-digit-area'); hide('wmc-input-area'); $('wmc-answer').value = "";
+        
+        WMC.currentDigits = [];
+        for(let i=0; i<WMC.level; i++) WMC.currentDigits.push(Math.floor(Math.random()*10));
+
+        let index = 0;
+        const readNext = () => {
+            if (index < WMC.currentDigits.length) {
+                const digit = WMC.currentDigits[index];
+                $('wmc-digit-area').innerText = digit;
+                speak(digit.toString(), 1.2);
+                index++;
+                setTimeout(readNext, 1000);
+            } else {
+                $('wmc-digit-area').innerText = "?";
+                setTimeout(() => { hide('wmc-digit-area'); show('wmc-input-area'); $('wmc-answer').focus(); }, 500);
+            }
+        };
+        setTimeout(readNext, 1000);
+    },
+    submitAnswer: () => {
+        const input = $('wmc-answer').value;
+        const correctStr = WMC.phase === 'forward' ? WMC.currentDigits.join('') : [...WMC.currentDigits].reverse().join('');
+        let msg = "";
+        if (input === correctStr) {
+            WMC.maxScore = Math.max(WMC.maxScore, WMC.level);
+            WMC.level++; WMC.consecutiveErrors = 0; msg = "正解！";
+        } else {
+            WMC.consecutiveErrors++; WMC.level++; msg = `不正解... 正解: ${correctStr}`;
+        }
+        showModal(msg, () => WMC.nextTrial());
+    },
+    saveData: () => {
+        sendToGAS({ dataType: 'wmc', participantId: State.pid, scoreForward: State.wmc.forwardScore, scoreBackward: State.wmc.backwardScore });
+    }
+};
+
+// Main Experiment
+const MainExp = {
+    timer: null, timeLeft: 0,
+    startNextTrial: () => {
+        if (State.currentTrialIndex >= State.trials.length) {
+            hideAll(); show('screen-finish'); return;
+        }
+        const trial = State.trials[State.currentTrialIndex];
+        State.currentCondition = trial.condition;
+        State.currentMaterial = EXPERIMENT_DATA[trial.materialIdx];
+
+        hideAll(); show('screen-memory');
+        $('condition-label').innerText = `条件: ${trial.condition.label}`;
+        $('instruction-text').innerText = trial.condition.desc;
+        $('text-display-area').innerText = "";
+        hide('memo-container'); $('memo-input').value = "";
+
+        if (trial.condition.id === 'listen') {
+            $('text-display-area').innerText = "（音声再生中...）";
+            const text = State.currentMaterial.text;
+            speak(text, 1.1, () => {
+                setTimeout(() => speak(text, 1.1), 1000); // 2回目
+            });
+        } else {
+            $('text-display-area').innerText = State.currentMaterial.text;
+        }
+
+        MainExp.timeLeft = 120;
+        $('timer-box').innerText = MainExp.timeLeft;
+        if(MainExp.timer) clearInterval(MainExp.timer);
+        MainExp.timer = setInterval(() => {
+            MainExp.timeLeft--;
+            $('timer-box').innerText = MainExp.timeLeft;
+            if (trial.condition.id === 'write' && MainExp.timeLeft === 60) {
+                $('instruction-text').innerText = "【後半】メモを取ってください！(手書き)";
+                show('memo-container'); $('memo-input').focus();
+            }
+            if (MainExp.timeLeft <= 0) {
+                clearInterval(MainExp.timer); window.speechSynthesis.cancel(); MainExp.startTest();
+            }
+        }, 1000);
+    },
+    startTest: () => {
+        hideAll(); show('screen-test'); $('recall-input').value = "";
+        $('quiz-container').innerHTML = "";
+        State.currentMaterial.quiz.forEach((q, i) => {
+            $('quiz-container').innerHTML += `<div class="quiz-item"><p>Q${i+1}. ${q.q}</p>${q.opts.map((o,idx)=>`<label><input type="radio" name="q${i}" value="${idx}">${o}</label>`).join('')}</div>`;
+        });
+    },
+    finishTest: () => {
+        hideAll(); show('screen-nasatlx'); $('nasa-form').innerHTML = "";
+        NASA_QUESTIONS.forEach(item => {
+            $('nasa-form').innerHTML += `<div class="nasa-item"><p>${item.label}: ${item.q}</p><div style="display:flex; gap:10px;"><input type="range" name="${item.id}" min="1" max="7" value="4" oninput="this.nextElementSibling.innerText=this.value"><span>4</span></div></div>`;
+        });
+    },
+    submitData: () => {
+        show('loading');
+        let score = 0;
+        State.currentMaterial.quiz.forEach((q, i) => {
+            const sel = document.querySelector(`input[name="q${i}"]:checked`);
+            if (sel && parseInt(sel.value) === q.a) score++;
+        });
+        const nasaData = {};
+        NASA_QUESTIONS.forEach(item => nasaData[item.id] = document.querySelector(`input[name="${item.id}"]`).value);
+
+        const payload = {
+            dataType: 'experiment',
+            participantId: State.pid,
+            condition: State.currentCondition.label,
+            recallText: $('recall-input').value,
+            quizScore: score,
+            nasaTlx: nasaData,
+            memoText: $('memo-input').value,
+            email: State.email,
+            materialIdx: State.trials[State.currentTrialIndex].materialIdx // ★文章番号を送信
+        };
+
+        sendToGAS(payload).then(() => {
+            hide('loading'); MainExp.startBreak();
+        });
+    },
+    startBreak: () => {
+        hideAll(); show('screen-break'); let t = 180; $('break-timer').innerText = "03:00";
+        MainExp.timer = setInterval(() => {
+            t--; $('break-timer').innerText = `${Math.floor(t/60).toString().padStart(2,'0')}:${(t%60).toString().padStart(2,'0')}`;
+            if (t<=0) MainExp.endBreak();
+        }, 1000);
+    },
+    endBreak: () => {
+        clearInterval(MainExp.timer); State.currentTrialIndex++; MainExp.startNextTrial();
+    }
+};
+
+function sendToGAS(data) {
+    return new Promise((resolve) => {
+        if (typeof google!=='undefined' && google.script) {
+            google.script.run.withSuccessHandler(resolve).withFailureHandler(()=>{alert("Error");resolve();}).saveData(data);
+        } else { setTimeout(resolve, 500); }
+    });
+}
+</script>
+</body>
+</html>
