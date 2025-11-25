@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>事後実験 (Day 2)</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #27ae60; --bg: #fdfefe; }
+        body { font-family: "Helvetica Neue", Arial, sans-serif; background: var(--bg); color: #333; line-height: 1.8; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 40px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1, h2, h3 { text-align: center; color: var(--primary); }
+        .hidden { display: none !important; }
+        .btn { display: block; width: 100%; max-width: 300px; margin: 20px auto; padding: 15px; background: var(--accent); color: #fff; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; }
+        .btn:hover { background: #219150; }
+        input, textarea { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        textarea { height: 120px; }
+        .quiz-item { margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
+        label { display: block; margin: 8px 0; cursor: pointer; }
+        #loading { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(255,255,255,0.9); z-index: 999; display: flex; justify-content: center; align-items: center; font-size: 1.5em; flex-direction: column; }
+    </style>
+</head>
+<body>
+
+<div id="loading" class="hidden">処理中...</div>
+
+<div class="container">
+    <section id="screen-welcome">
+        <h1>記憶実験 (Day 2)</h1>
+        <p>事後テストにご協力いただきありがとうございます。</p>
+        <p>昨日行った実験IDと同じIDを入力してください。</p>
+        <input type="text" id="participant-id" placeholder="参加者ID (例: P01)">
+        <button class="btn" onclick="App.login()">開始する</button>
+    </section>
+
+    <section id="screen-test" class="hidden">
+        <h2 id="condition-label"></h2>
+        <p>昨日、この条件で学習した文章について回答してください。</p>
+        
+        <h3>1. 単語再生</h3>
+        <textarea id="recall-input" placeholder="覚えていることを箇条書きで..."></textarea>
+
+        <h3>2. 内容理解クイズ (表現変更版)</h3>
+        <div id="quiz-container"></div>
+
+        <button class="btn" onclick="App.submitAnswer()">回答して次へ</button>
+    </section>
+
+    <section id="screen-finish" class="hidden">
+        <h1>全実験終了</h1>
+        <p>これですべての工程が終了しました。</p>
+        <p>ご協力、本当にありがとうございました。</p>
+    </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const show = id => $(id).classList.remove('hidden');
+const hide = id => $(id).classList.add('hidden');
+const hideAll = () => document.querySelectorAll('section').forEach(el => el.classList.add('hidden'));
+
+// Day2用クイズ（Day1の文章データに対応）
+const DAY2_QUIZZES = [
+    {
+        // 文章1 (スーパー)
+        quiz: [{q:"買い物した曜日は？",opts:["金","土","日"],a:0},{q:"野菜の産地は？",opts:["北海道","青森","千葉"],a:0},{q:"キーケースの素材は？",opts:["布","プラスチック","革"],a:2},{q:"帰宅手段は？",opts:["タクシー","電車","バス"],a:2},{q:"帰宅後の感情は？",opts:["後悔","安堵","疲労"],a:1}]
+    },
+    {
+        // 文章2 (青井の森)
+        quiz: [{q:"花が光る条件は？",opts:["雨","月光","風"],a:1},{q:"主(ぬし)の正体は？",opts:["魚","鳥","蛇"],a:0},{q:"制限されているのは？",opts:["撮影","立入","飲食"],a:1},{q:"マップ収益の使い道は？",opts:["PR","保全","修繕"],a:1},{q:"森の方角は？",opts:["南","東","北"],a:2}]
+    },
+    {
+        // 文章3 (伝統工芸)
+        quiz: [{q:"輝きの素は？",opts:["金箔","貝殻","宝石"],a:1},{q:"作業集中時期は？",opts:["冬","梅雨","秋"],a:1},{q:"増えている層は？",opts:["海外客","若手職人","機械"],a:1},{q:"歴史の長さは？",opts:["100年","300年","500年"],a:1},{q:"展示会はいつ？",opts:["春","夏","秋"],a:2}]
+    },
+    {
+        // 文章4 (新惑星)
+        quiz: [{q:"平均気温は？",opts:["氷点下","20度","50度"],a:1},{q:"注目の大気成分は？",opts:["CO2","水素","酸素"],a:2},{q:"望遠鏡の場所は？",opts:["南米","北極","砂漠"],a:0},{q:"今後の調査期間は？",opts:["5年","10年","20年"],a:1},{q:"地球からの距離は？",opts:["50光年","500光年","5000光年"],a:0}]
+    }
+];
+
+const App = {
+    participantId: "",
+    trials: [], // { condition: string, materialIdx: number } の配列
+    currentIndex: 0,
+
+    login: () => {
+        const id = $('participant-id').value;
+        if (!id) return alert("IDを入力してください");
+        App.participantId = id;
+        show('loading');
+
+        google.script.run
+            .withSuccessHandler((history) => {
+                hide('loading');
+                if (!history || history.length === 0) {
+                    alert("データが見つかりません。");
+                    return;
+                }
+                App.trials = history; // Day1の履歴
+                App.startTest();
+            })
+            .withFailureHandler((e) => {
+                hide('loading');
+                alert("エラー: " + e);
+            })
+            .getParticipantData(id);
+    },
+
+    startTest: () => {
+        hideAll();
+        if (App.currentIndex >= App.trials.length) {
+            show('screen-finish'); return;
+        }
+
+        const trial = App.trials[App.currentIndex];
+        const quizData = DAY2_QUIZZES[trial.materialIdx]; // 文章IDに基づいたクイズを取得
+
+        show('screen-test');
+        $('condition-label').innerText = `Day1条件: ${trial.condition}`;
+        $('recall-input').value = "";
+        
+        $('quiz-container').innerHTML = "";
+        quizData.quiz.forEach((q, i) => {
+            $('quiz-container').innerHTML += `<div class="quiz-item"><p>Q${i+1}. ${q.q}</p>${q.opts.map((o,idx)=>`<label><input type="radio" name="q${i}" value="${idx}">${o}</label>`).join('')}</div>`;
+        });
+    },
+
+    submitAnswer: () => {
+        const trial = App.trials[App.currentIndex];
+        const quizData = DAY2_QUIZZES[trial.materialIdx];
+        let score = 0;
+        quizData.quiz.forEach((q, i) => {
+            const sel = document.querySelector(`input[name="q${i}"]:checked`);
+            if (sel && parseInt(sel.value) === q.a) score++;
+        });
+
+        const payload = {
+            dataType: 'day2',
+            participantId: App.participantId,
+            condition: trial.condition,
+            recallText: $('recall-input').value,
+            quizScore: score
+        };
+
+        show('loading');
+        google.script.run.withSuccessHandler(() => {
+            hide('loading');
+            App.currentIndex++;
+            App.startTest();
+        }).saveData(payload);
+    }
+};
+</script>
+</body>
+</html>
